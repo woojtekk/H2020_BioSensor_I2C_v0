@@ -34,11 +34,16 @@ struct sensorData_t{
   uint32_t MEASURE_TIME_INTERWAL;           // time to collect sample for single measurements
   uint32_t LAST_UPDATE;                     // time since last status update in seconds  
 
-  int32_t  INTERNAL_TEMPERATURE;            // internal temperature of sample medium just for debuging and services
-  int32_t  INTERNAL_PRESSURE;               // internal pressure of sample medium just for debuging and services
-  int32_t  INTERNAL_FLOW;                   // internal flow of sample medium just for debuging and services
-  int32_t  DETECTION_TRESHOLD;              // detection treshold. above this value ALARM wil be reported
-  int32_t  DETECTION_VALUE;                 // real value of measurements just for debuging and services
+  int32_t  INTERNAL_TEMPERATURE;            /* temperatur:     36.660*C *1000 = 36660   
+                                               internal temperature of sample medium just for debuging and services */
+  int32_t  INTERNAL_PRESSURE;               /* pressure:   1013.450hPa * 1000 = 1013450 
+                                               internal pressure of sample medium just for debuging and services */
+  int32_t  INTERNAL_FLOW;                   /* flow:        123.456 ml/min * 1000 = 123456  
+                                               internal flow of sample medium just for debuging and services */
+  int32_t  DETECTION_TRESHOLD;              /* Detection treshold:  12345678 - at the moement not sure about value  
+                                               detection treshold. above this value ALARM wil be reported */
+  int32_t  DETECTION_VALUE;                 /* Detection value: 12345678 - at the moement not sure about value  
+                                               real value of measurements just for debuging and services */
 
   uint8_t  STATUS;    /* Dev. Status. bit 0:  0 - device off or error or 1 - Normal operating mode 
                                       bit 1-7  converted to uint8. Values from 0 - 128 statsu details slist will be provided later */
@@ -65,7 +70,7 @@ byte myArray[4];
 void INIT(){          // prepare init values 
   Serial.println(":: INIT PARAM..."); 
   SENSOR.ID                     = UINT32_MAX;  
-  SENSOR.RESET                  = 66;
+  SENSOR.RESET                  = 0;
   SENSOR.STATUS                 = 125;
   SENSOR.ALARM                  = 0;
   SENSOR.ERROR                  = 0;
