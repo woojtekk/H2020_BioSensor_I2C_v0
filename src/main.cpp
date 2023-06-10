@@ -1,9 +1,9 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <stdint.h>
-#include <avr/wdt.h>
-#include <CRC32.h>
-#include <avr/wdt.h>
+// #include <avr/wdt.h>
+// #include <CRC32.h>
+// #include <avr/wdt.h>
 
 #define DEBUG  true
 #define Serial if(DEBUG)Serial
@@ -58,7 +58,7 @@ struct sensorData_t{
 
 
 sensorData_t SENSOR;
-CRC32 crc32;
+// CRC32 crc32;
 byte reg;
 boolean IFCRC = false;
 
@@ -103,7 +103,7 @@ void INIT_RANDOM(){   // apply random values just for tests
 
 void softwareReset( uint8_t prescaller=WDTO_60MS) {
   // start watchdog with the provided prescaller
-  wdt_enable( prescaller);
+  // wdt_enable( prescaller);
   // wait for the prescaller time to expire
   // without sending the reset signal by using
   // the wdt_reset() method
