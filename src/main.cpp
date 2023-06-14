@@ -1,32 +1,13 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include "main.h"
 #include <stdint.h>
-// #include <avr/wdt.h>
-// #include <CRC32.h>
-// #include <avr/wdt.h>
+
 
 #define DEBUG  true
-#define Serial if(DEBUG)Serial
+#define DEBUG_PRINT if(DEBUG) Serial
 
-#define I2C_ADDRESS       0x66
-#define I2C_SCL           13              // A5  - those pins can not be changed for arduino uno
-#define I2C_SDA           12              // A4  - those pins can not be changed for arduino uno
-#define PIN_ALARM         23
-#define BIOSENSOR_ID      UINT32_MAX      // 24 bits unsigned integer. range: 0 - 16`777`215 
 
-#define REG_ID                      0x01  // uint32 ==> 4 byte  R
-#define REG_RESET                   0x02  // uint8  ==> 1 byte  W
-#define REG_STATUS                  0x03  // uint8  ==> 1 byte  R
-#define REG_ERROR                   0x04  // uint8  ==> 1 byte  R
-#define REG_LIFETIME                0x05  // uint32 ==> 4 byte  R
-#define REG_INTERNAL_TEMPERATURE    0x06  // int32  ==> 4 byte  R
-#define REG_INTERNAL_PRESSURE       0x07  // uint32 ==> 4 byte  R
-#define REG_INTERNAL_FLOW           0x08  // uint32 ==> 4 byte  R
-#define REG_ALARM                   0x09  // uint8  ==> 1 byte  R
-#define REG_MEASURE_TIME_INTERWAL   0x0A  // uint32 ==> 4 byte  R/W
-#define REG_DETECTION_TRESHOLD      0x0B  // uint32 ==> 4 byte  R/W
-#define REG_DETECTION_VALUE         0x0C  // uint32 ==> 4 byte  R/W
-#define REG_ONOFF_CRC               0x0D  // uint32 ==> 4 byte  R/W
 
 struct sensorData_t{
   uint32_t ID;                              // indyvidual ID of the device
@@ -54,11 +35,17 @@ struct sensorData_t{
   uint8_t  RESET;     /* Dev. RESET. bit 0-7: vonverted to uint8. indyvidual value mens reset of indyvidual component or full devices. 
                                       only for servcies, debiging, or is case of freez*/
 
+  uint32_t TIMESTAMP;
+  uint32_t ID_CHIP;
+  uint32_t FW;
+
+  uint16_t IP1, IP2,IP3,IP4,IP5;
+
+
 };
 
 
 sensorData_t SENSOR;
-// CRC32 crc32;
 byte reg;
 boolean IFCRC = false;
 
@@ -68,7 +55,7 @@ uint32_t bigNum2;
 byte myArray[4];
 
 void INIT(){          // prepare init values 
-  Serial.println(":: INIT PARAM..."); 
+  DEBUG_PRINT.println(":: INIT PARAM..."); 
   SENSOR.ID                     = UINT32_MAX;  
   SENSOR.RESET                  = 0;
   SENSOR.STATUS                 = 125;
@@ -82,10 +69,19 @@ void INIT(){          // prepare init values
   SENSOR.DETECTION_TRESHOLD     = 1234567890;
   SENSOR.DETECTION_VALUE        = 1234567890;
 
+  SENSOR.TIMESTAMP = 0;
+  SENSOR.ID_CHIP = 98765432;
+  SENSOR.FW = 234432;
+  SENSOR.IP1 = 1111;
+  SENSOR.IP2 = 2222;
+  SENSOR.IP3 = 3333;
+  SENSOR.IP4 = 4444;
+  SENSOR.IP5 = 5555;
+
 }
 
 void INIT_RANDOM(){   // apply random values just for tests
-  Serial.println(":: RANDOM INIT PARAM..."); 
+  DEBUG_PRINT.println(":: RANDOM INIT PARAM..."); 
   // SENSOR.ID                     = UINT32_MAX;  
   // SENSOR.RESET                  = 66;
   SENSOR.STATUS                 = random(1,256);
@@ -101,33 +97,31 @@ void INIT_RANDOM(){   // apply random values just for tests
 
 }
 
-void softwareReset( uint8_t prescaller=WDTO_60MS) {
-  // start watchdog with the provided prescaller
-  // wdt_enable( prescaller);
-  // wait for the prescaller time to expire
-  // without sending the reset signal by using
-  // the wdt_reset() method
+void softwareReset() {
+  esp_restart();
   while(1) {}
 }
 void  DATAPROCESS(){
-  if(SENSOR.RESET == 128)  digitalWrite( 7, LOW);   // perform HardReset
+  if(SENSOR.RESET == 128)  ESP.restart();   // perform HardReset
   if(bitRead(SENSOR.ALARM,0) == 1) {
-    Serial.println(">>>>>>>>>>>>>>>>>>> ALARM <<<<<<<<<<<<<<<<<<<");
+    DEBUG_PRINT.println(">>>>>>>>>>>>>>>>>>> ALARM <<<<<<<<<<<<<<<<<<<");
     digitalWrite(PIN_ALARM, HIGH);
   } else {
-    Serial.println("<<<<<<<<<<<<<<<<<<< NO ALARM >>>>>>>>>>>>>>>>>>>");
+    DEBUG_PRINT.println("<<<<<<<<<<<<<<<<<<< NO ALARM >>>>>>>>>>>>>>>>>>>");
     digitalWrite(PIN_ALARM, HIGH);
     
   }
 
 }
 
+
+
 void SaveToRegister(byte reg, int howMany){
-    Serial.print  (F(":: #### Save:    Register: ")); 
-    Serial.print  (reg);
-    Serial.print  (F(" \t :: "));
-    Serial.print  (howMany);
-    Serial.print  (F(" bytes :: "));
+    DEBUG_PRINT.print  (F(":: #### Save:    Register: ")); 
+    DEBUG_PRINT.print  (reg);
+    DEBUG_PRINT.print  (F(" \t :: "));
+    DEBUG_PRINT.print  (howMany);
+    DEBUG_PRINT.print  (F(" bytes :: "));
 
     switch(reg){
       /*========================
@@ -136,45 +130,45 @@ void SaveToRegister(byte reg, int howMany){
       Read: 1 byte of data
       ========================*/
       case REG_RESET:
-        // Serial.print  (F("REG_RESET: "));
+        // DEBUG_PRINT.print  (F("REG_RESET: "));
         if( howMany == 2 and Wire.available() ){
           byte read = Wire.read();
-          Serial.print(SENSOR.ERROR);
-          Serial.print(" >> ");
+          DEBUG_PRINT.print(SENSOR.ERROR);
+          DEBUG_PRINT.print(" >> ");
           SENSOR.ERROR = read;
-          Serial.println(SENSOR.ERROR);
+          DEBUG_PRINT.println(SENSOR.ERROR);
         }
         else{     
-          Serial.println(":: ERR_04");
+          DEBUG_PRINT.println(":: ERR_04");
           Wire.write("ERR_04");
         }
-        Serial.println(" ");
+        DEBUG_PRINT.println(" ");
         break;
 
-      /*========================
-      MEASURE_TIME_INTERWAL: 0x0A [R/W] 
-      unsigned 32 bit integer [uint32_t]
-      Read: 4 byte of data
-      ========================*/
-      case REG_MEASURE_TIME_INTERWAL:
-        // Serial.print  (F("MEASURE_TIME_INTERWAL: "));
-        if( howMany == 5 and Wire.available() ){
+      // /*========================
+      // MEASURE_TIME_INTERWAL: 0x0A [R/W] 
+      // unsigned 32 bit integer [uint32_t]
+      // Read: 4 byte of data
+      // ========================*/
+      // case REG_MEASURE_TIME_INTERWAL:
+      //   // DEBUG_PRINT.print  (F("MEASURE_TIME_INTERWAL: "));
+      //   if( howMany == 5 and Wire.available() ){
 
-          bigNum = 0;
-          bigNum = Wire.read();
-          while ( Wire.available() )  bigNum = (bigNum << 8) | Wire.read();
+      //     bigNum = 0;
+      //     bigNum = Wire.read();
+      //     while ( Wire.available() )  bigNum = (bigNum << 8) | Wire.read();
 
-          Serial.print(SENSOR.MEASURE_TIME_INTERWAL);
-          Serial.print(F(" >> "));
-          SENSOR.MEASURE_TIME_INTERWAL = bigNum;
-          Serial.println(SENSOR.MEASURE_TIME_INTERWAL);
-        }
-        else{     
-          Serial.println(F(":: ERR_04"));
-          Wire.write("ERR_04");
-        }
-        Serial.println(F(" "));
-        break;
+      //     DEBUG_PRINT.print(SENSOR.MEASURE_TIME_INTERWAL);
+      //     DEBUG_PRINT.print(F(" >> "));
+      //     SENSOR.MEASURE_TIME_INTERWAL = bigNum;
+      //     DEBUG_PRINT.println(SENSOR.MEASURE_TIME_INTERWAL);
+      //   }
+      //   else{     
+      //     DEBUG_PRINT.println(F(":: ERR_04"));
+      //     Wire.write("ERR_04");
+      //   }
+      //   DEBUG_PRINT.println(F(" "));
+      //   break;
 
 
      /*========================
@@ -183,23 +177,23 @@ void SaveToRegister(byte reg, int howMany){
       Read: 4 byte of data
       ========================*/
       case REG_DETECTION_TRESHOLD:
-        // Serial.print  (F("DETECTION_TRESHOLD: "));
+        // DEBUG_PRINT.print  (F("DETECTION_TRESHOLD: "));
         if( howMany == 5 and Wire.available() ){
 
           bigNum = 0;
           bigNum = Wire.read();
           while ( Wire.available() )  bigNum = (bigNum << 8) | Wire.read();
 
-          Serial.print(SENSOR.DETECTION_TRESHOLD);
-          Serial.print(F(" >> "));
+          DEBUG_PRINT.print(SENSOR.DETECTION_TRESHOLD);
+          DEBUG_PRINT.print(F(" >> "));
           SENSOR.DETECTION_TRESHOLD = bigNum;
-          Serial.println(SENSOR.DETECTION_TRESHOLD);
+          DEBUG_PRINT.println(SENSOR.DETECTION_TRESHOLD);
         }
         else{     
-          Serial.println(F(":: ERR_04"));
+          DEBUG_PRINT.println(F(":: ERR_04"));
           Wire.write("ERR_04");
         }
-        Serial.println(" ");
+        DEBUG_PRINT.println(" ");
         break;
 
      /*========================
@@ -207,43 +201,146 @@ void SaveToRegister(byte reg, int howMany){
       unsigned 32 bit integer [uint32_t]
       Read: 4 byte of data
       ========================*/
-      case REG_DETECTION_VALUE:
-        // Serial.print  (F("DETECTION_VALUE: "));
+      case REG_TIMESTAMP:
+        // DEBUG_PRINT.print  (F("DETECTION_VALUE: "));
         if( howMany == 5 and Wire.available() ){
 
           bigNum = 0;
           bigNum = Wire.read();
           while ( Wire.available() )  bigNum = (bigNum << 8) | Wire.read();
 
-          Serial.print(SENSOR.DETECTION_VALUE);
-          Serial.print(F(" >> "));
-          SENSOR.DETECTION_VALUE = bigNum;
-          Serial.println(SENSOR.DETECTION_VALUE);
+          DEBUG_PRINT.print(SENSOR.TIMESTAMP);
+          DEBUG_PRINT.print(F(" >> "));
+          SENSOR.TIMESTAMP = bigNum;
+          DEBUG_PRINT.println(SENSOR.TIMESTAMP);
         }
         else{     
-          Serial.println(F(":: ERR_04"));
+          DEBUG_PRINT.println(F(":: ERR_04"));
           Wire.write("ERR_04");
         }
-        Serial.println(F(" "));
+        DEBUG_PRINT.println(F(" "));
+        break;
+
+      case REG_IP_1:
+        // DEBUG_PRINT.print  (F("DETECTION_VALUE: "));
+        if( howMany == 3 and Wire.available() ){
+
+          bigNum = 0;
+          bigNum = Wire.read();
+          while ( Wire.available() )  bigNum = (bigNum << 8) | Wire.read();
+
+          DEBUG_PRINT.print(SENSOR.IP1);
+          DEBUG_PRINT.print(F(" >> "));
+          SENSOR.IP1 = bigNum;
+          DEBUG_PRINT.println(SENSOR.IP1);
+        }
+        else{     
+          DEBUG_PRINT.println(F(":: ERR_04"));
+          Wire.write("ERR_04");
+        }
+        DEBUG_PRINT.println(F(" "));
+        break;
+
+      case REG_IP_2:
+        // DEBUG_PRINT.print  (F("DETECTION_VALUE: "));
+        if( howMany == 3 and Wire.available() ){
+
+          bigNum = 0;
+          bigNum = Wire.read();
+          while ( Wire.available() )  bigNum = (bigNum << 8) | Wire.read();
+
+          DEBUG_PRINT.print(SENSOR.IP2);
+          DEBUG_PRINT.print(F(" >> "));
+          SENSOR.IP2 = bigNum;
+          DEBUG_PRINT.println(SENSOR.IP2);
+        }
+        else{     
+          DEBUG_PRINT.println(F(":: ERR_04"));
+          Wire.write("ERR_04");
+        }
+        DEBUG_PRINT.println(F(" "));
+        break;
+
+
+      case REG_IP_3:
+        // DEBUG_PRINT.print  (F("DETECTION_VALUE: "));
+        if( howMany == 3 and Wire.available() ){
+
+          bigNum = 0;
+          bigNum = Wire.read();
+          while ( Wire.available() )  bigNum = (bigNum << 8) | Wire.read();
+
+          DEBUG_PRINT.print(SENSOR.IP3);
+          DEBUG_PRINT.print(F(" >> "));
+          SENSOR.IP3 = bigNum;
+          DEBUG_PRINT.println(SENSOR.IP3);
+        }
+        else{     
+          DEBUG_PRINT.println(F(":: ERR_04"));
+          Wire.write("ERR_04");
+        }
+        DEBUG_PRINT.println(F(" "));
+        break;
+
+
+      case REG_IP_4:
+        // DEBUG_PRINT.print  (F("DETECTION_VALUE: "));
+        if( howMany == 3 and Wire.available() ){
+
+          bigNum = 0;
+          bigNum = Wire.read();
+          while ( Wire.available() )  bigNum = (bigNum << 8) | Wire.read();
+
+          DEBUG_PRINT.print(SENSOR.IP4);
+          DEBUG_PRINT.print(F(" >> "));
+          SENSOR.IP4 = bigNum;
+          DEBUG_PRINT.println(SENSOR.IP4);
+        }
+        else{     
+          DEBUG_PRINT.println(F(":: ERR_04"));
+          Wire.write("ERR_04");
+        }
+        DEBUG_PRINT.println(F(" "));
+        break;
+
+
+      case REG_IP_5:
+        // DEBUG_PRINT.print  (F("DETECTION_VALUE: "));
+        if( howMany == 3 and Wire.available() ){
+
+          bigNum = 0;
+          bigNum = Wire.read();
+          while ( Wire.available() )  bigNum = (bigNum << 8) | Wire.read();
+
+          DEBUG_PRINT.print(SENSOR.IP5);
+          DEBUG_PRINT.print(F(" >> "));
+          SENSOR.IP5 = bigNum;
+          DEBUG_PRINT.println(SENSOR.IP5);
+        }
+        else{     
+          DEBUG_PRINT.println(F(":: ERR_04"));
+          Wire.write("ERR_04");
+        }
+        DEBUG_PRINT.println(F(" "));
         break;
 
 
 
       default :
-        Serial.println(F(":: >> EMPTY <<"));
+        DEBUG_PRINT.println(F(":: >> EMPTY <<"));
         Wire.write("ERR_03");
         break;
     }
 }
 
-// function that executes whenever data is received from master
+// function executes whenever data is received from master
 void receiveEvent(int howMany) {
-  reg = Wire.read();
-  Serial.print  (":: <<<< Receive: Register: "); 
-  Serial.print  (reg);
-  Serial.print  (" \t :: ");
-  Serial.print  (howMany);
-  Serial.println(" bytes");
+  byte reg = Wire.read();
+  DEBUG_PRINT.print  (":: <<<< Receive: Register: "); 
+  DEBUG_PRINT.print  (reg);
+  DEBUG_PRINT.print  (" \t :: ");
+  DEBUG_PRINT.print  (howMany);
+  DEBUG_PRINT.println(" bytes");
 
 
   if (howMany > 1) SaveToRegister(reg,howMany); 
@@ -252,10 +349,11 @@ void receiveEvent(int howMany) {
 
 // function that executes whenever data is requested from master
 void requestEvent() {
-  Serial.print  (":: >>>> Send:    Register: "); 
-  Serial.print  (reg);
+  DEBUG_PRINT.print  (":: >>>> Send:    Register: "); 
+  DEBUG_PRINT.print  (reg);
 
   byte myArray[4];
+  byte myArray16[2];
 
   if (reg >= 0){
     switch(reg){
@@ -265,9 +363,9 @@ void requestEvent() {
       SEND: 4 byte of data
       ========================*/
       case REG_ID:
-        Serial.print  (F(" \t :: 4 bytes :: "));
-        Serial.print  (SENSOR.ID);
-        Serial.print  (F(" :: in Byte: "));
+        DEBUG_PRINT.print  (F(" \t :: 4 bytes :: "));
+        DEBUG_PRINT.print  (SENSOR.ID);
+        DEBUG_PRINT.print  (F(" :: in Byte: "));
 
         myArray[0] = (SENSOR.ID >> 24) & 0xFF;
         myArray[1] = (SENSOR.ID >> 16) & 0xFF;
@@ -275,20 +373,20 @@ void requestEvent() {
         myArray[3] =  SENSOR.ID & 0xFF;
 
         for(int x = 0; x <= 3; x++){
-          Serial.print(" ");
-          Serial.print(myArray[x]);
+          DEBUG_PRINT.print(" ");
+          DEBUG_PRINT.print(myArray[x]);
         }
       
         Wire.write(myArray, 4);
-        Serial.println(" ");
-        // Serial.print("\n:: CRC::");
-        // Serial.print(CRC32::calculate(myArray, 4));
-        // Serial.print (" :: ");
-        // Serial.println(sizeof(CRC32::calculate(myArray, 4)));
+        DEBUG_PRINT.println(" ");
+        // DEBUG_PRINT.print("\n:: CRC::");
+        // DEBUG_PRINT.print(CRC32::calculate(myArray, 4));
+        // DEBUG_PRINT.print (" :: ");
+        // DEBUG_PRINT.println(sizeof(CRC32::calculate(myArray, 4)));
 
   
         // if(IFCRC){
-        //   Serial.println(CRC32::calculate(myArray, 4));
+        //   DEBUG_PRINT.println(CRC32::calculate(myArray, 4));
         //   Wire.write(CRC32::calculate(myArray, 4));
         // }
       break;
@@ -304,12 +402,12 @@ void requestEvent() {
               Value from 0 up to 128
       ========================*/
       case REG_STATUS:
-        Serial.print  (F(" \t :: 1 byte  :: "));
-        Serial.print  (SENSOR.STATUS);
-        Serial.print  (F(" :: in Byte: "));
+        DEBUG_PRINT.print  (F(" \t :: 1 byte  :: "));
+        DEBUG_PRINT.print  (SENSOR.STATUS);
+        DEBUG_PRINT.print  (F(" :: in Byte: "));
 
 
-        Serial.println(SENSOR.STATUS);
+        DEBUG_PRINT.println(SENSOR.STATUS);
         Wire.write(SENSOR.STATUS);
         break;
 
@@ -324,111 +422,139 @@ void requestEvent() {
               Value from 0 up to 128
       ========================*/
       case REG_ERROR:
-        Serial.print  (F(" \t :: 1 byte  :: "));
-        Serial.print  (SENSOR.ERROR);
-        Serial.print  (F(" :: in Byte: "));
+        DEBUG_PRINT.print  (F(" \t :: 1 byte  :: "));
+        DEBUG_PRINT.print  (SENSOR.ERROR);
+        DEBUG_PRINT.print  (F(" :: in Byte: "));
 
-        Serial.println(SENSOR.ERROR);
+        DEBUG_PRINT.println(SENSOR.ERROR);
         Wire.write(SENSOR.ERROR);
         break;
 
       /*========================
-      Device LIFETIME: 0x04 [READ ONLY] 
-      unsigned 32 bit integer [uint32_t]
-      SEND: 4 byte of data
+      Device INTERNAL PARAM 1: 0x04 [READ ONLY] 
+      unsigned 16 bit integer [uint32_t]
+      SEND: 2 byte of data
       ========================*/
-      case REG_LIFETIME:
-        Serial.print  (F(" \t :: 4 bytes :: "));
-        Serial.print  (SENSOR.LIFETIME);
-        Serial.print  (F(" :: in Byte: "));
+      case REG_IP_1:
+        DEBUG_PRINT.print  (F(" \t :: 4 bytes :: "));
+        DEBUG_PRINT.print  (SENSOR.IP1);
+        DEBUG_PRINT.print  (F(" :: in Byte: "));
 
-        myArray[0] = (SENSOR.LIFETIME >> 24) & 0xFF;
-        myArray[1] = (SENSOR.LIFETIME >> 16) & 0xFF;
-        myArray[2] = (SENSOR.LIFETIME >>  8) & 0xFF;
-        myArray[3] =  SENSOR.LIFETIME & 0xFF;
+        // myArray16[0] = (SENSOR.IP1 >> 24) & 0xFF;
+        // myArray16[1] = (SENSOR.IP1 >> 16) & 0xFF;
+        myArray16[0] = (SENSOR.IP1 >>  8) & 0xFF;
+        myArray16[1] =  SENSOR.IP1 & 0xFF;
 
-        for(int x = 0; x <= 3; x++){
-          Serial.print(" ");
-          Serial.print(myArray[x]);
+        for(int x = 0; x <= 1; x++){
+          DEBUG_PRINT.print(" ");
+          DEBUG_PRINT.print(myArray16[x]);
         }
         
-        Wire.write(myArray, 4);
-        Serial.println(" ");
+        Wire.write(myArray16, 2);
+        DEBUG_PRINT.println(" ");
 
       break;
 
       /*========================
-      Device INTERNAL_TEMPERATURE: 0x05 [READ ONLY] 
-      unsigned 32 bit integer [uint32_t]
-      SEND: 4 byte of data
+      Device INTERNAL PARAM 2: 0x04 [READ ONLY] 
+      unsigned 16 bit integer [uint32_t]
+      SEND: 2 byte of data
       ========================*/
-      case REG_INTERNAL_TEMPERATURE:
-        Serial.print  (F(" \t :: 4 bytes :: "));
-        Serial.print  (SENSOR.INTERNAL_TEMPERATURE);
-        Serial.print  (F(" :: in Byte: "));
+      case REG_IP_2:
+        DEBUG_PRINT.print  (F(" \t :: 2 bytes :: "));
+        DEBUG_PRINT.print  (SENSOR.IP2);
+        DEBUG_PRINT.print  (F(" :: in Byte: "));
 
-        myArray[0] = (SENSOR.INTERNAL_TEMPERATURE >> 24) & 0xFF;
-        myArray[1] = (SENSOR.INTERNAL_TEMPERATURE >> 16) & 0xFF;
-        myArray[2] = (SENSOR.INTERNAL_TEMPERATURE >>  8) & 0xFF;
-        myArray[3] =  SENSOR.INTERNAL_TEMPERATURE & 0xFF;
+        // myArray16[0] = (SENSOR.IP1 >> 24) & 0xFF;
+        // myArray16[1] = (SENSOR.IP1 >> 16) & 0xFF;
+        myArray16[0] = (SENSOR.IP2 >>  8) & 0xFF;
+        myArray16[1] =  SENSOR.IP2 & 0xFF;
 
-        for(int x = 0; x <= 3; x++){
-          Serial.print(" ");
-          Serial.print(myArray[x]);
+        for(int x = 0; x <= 1; x++){
+          DEBUG_PRINT.print(" ");
+          DEBUG_PRINT.print(myArray16[x]);
         }
         
-        Wire.write(myArray, 4);
-        Serial.println(" ");
-      break;
-
-      /*========================
-      Device INTERNAL_PRESSURE: 0x06 [READ ONLY] 
-      unsigned 32 bit integer [uint32_t]
-      SEND: 4 byte of data
-      ========================*/
-      case REG_INTERNAL_PRESSURE:
-        Serial.print  (F(" \t :: 4 bytes :: "));
-        Serial.print  (SENSOR.INTERNAL_PRESSURE);
-        Serial.print  (F(" :: in Byte: "));
-
-        myArray[0] = (SENSOR.INTERNAL_PRESSURE >> 24) & 0xFF;
-        myArray[1] = (SENSOR.INTERNAL_PRESSURE >> 16) & 0xFF;
-        myArray[2] = (SENSOR.INTERNAL_PRESSURE >>  8) & 0xFF;
-        myArray[3] =  SENSOR.INTERNAL_PRESSURE & 0xFF;
-
-        for(int x = 0; x <= 3; x++){
-          Serial.print(" ");
-          Serial.print(myArray[x]);
-        }
-        
-        Wire.write(myArray, 4);
-        Serial.println(" ");
+        Wire.write(myArray16, 2);
+        DEBUG_PRINT.println(" ");
 
       break;
 
+
       /*========================
-      Device INTERNAL_FLOW: 0x07 [READ ONLY] 
-      unsigned 32 bit integer [uint32_t]
-      SEND: 4 byte of data
+      Device INTERNAL PARAM 3: 0x04 [READ ONLY] 
+      unsigned 16 bit integer [uint32_t]
+      SEND: 2 byte of data
       ========================*/
+      case REG_IP_3:
+        DEBUG_PRINT.print  (F(" \t :: 2 bytes :: "));
+        DEBUG_PRINT.print  (SENSOR.IP3);
+        DEBUG_PRINT.print  (F(" :: in Byte: "));
 
-      case REG_INTERNAL_FLOW:
-        Serial.print  (F(" \t :: 4 bytes :: "));
-        Serial.print  (SENSOR.INTERNAL_FLOW);
-        Serial.print  (F(" :: in Byte: "));
+        // myArray16[0] = (SENSOR.IP1 >> 24) & 0xFF;
+        // myArray16[1] = (SENSOR.IP1 >> 16) & 0xFF;
+        myArray16[0] = (SENSOR.IP3 >>  8) & 0xFF;
+        myArray16[1] =  SENSOR.IP3 & 0xFF;
 
-        myArray[0] = (SENSOR.INTERNAL_FLOW >> 24) & 0xFF;
-        myArray[1] = (SENSOR.INTERNAL_FLOW >> 16) & 0xFF;
-        myArray[2] = (SENSOR.INTERNAL_FLOW >>  8) & 0xFF;
-        myArray[3] =  SENSOR.INTERNAL_FLOW & 0xFF;
-
-        for(int x = 0; x <= 3; x++){
-          Serial.print(" ");
-          Serial.print(myArray[x]);
+        for(int x = 0; x <= 1; x++){
+          DEBUG_PRINT.print(" ");
+          DEBUG_PRINT.print(myArray16[x]);
         }
         
-        Wire.write(myArray, 4);
-        Serial.println(" ");
+        Wire.write(myArray16, 2);
+        DEBUG_PRINT.println(" ");
+
+      break;
+
+
+      /*========================
+      Device INTERNAL PARAM 4: 0x04 [READ ONLY] 
+      unsigned 16 bit integer [uint32_t]
+      SEND: 2 byte of data
+      ========================*/
+      case REG_IP_4:
+        DEBUG_PRINT.print  (F(" \t :: 2 bytes :: "));
+        DEBUG_PRINT.print  (SENSOR.IP4);
+        DEBUG_PRINT.print  (F(" :: in Byte: "));
+
+        // myArray16[0] = (SENSOR.IP1 >> 24) & 0xFF;
+        // myArray16[1] = (SENSOR.IP1 >> 16) & 0xFF;
+        myArray16[0] = (SENSOR.IP4 >>  8) & 0xFF;
+        myArray16[1] =  SENSOR.IP4 & 0xFF;
+
+        for(int x = 0; x <= 1; x++){
+          DEBUG_PRINT.print(" ");
+          DEBUG_PRINT.print(myArray16[x]);
+        }
+        
+        Wire.write(myArray16, 2);
+        DEBUG_PRINT.println(" ");
+
+      break;
+
+
+      /*========================
+      Device INTERNAL PARAM 5: 0x04 [READ ONLY] 
+      unsigned 16 bit integer [uint32_t]
+      SEND: 2 byte of data
+      ========================*/
+      case REG_IP_5:
+        DEBUG_PRINT.print  (F(" \t :: 2 bytes :: "));
+        DEBUG_PRINT.print  (SENSOR.IP5);
+        DEBUG_PRINT.print  (F(" :: in Byte: "));
+
+        // myArray16[0] = (SENSOR.IP1 >> 24) & 0xFF;
+        // myArray16[1] = (SENSOR.IP1 >> 16) & 0xFF;
+        myArray16[0] = (SENSOR.IP5 >>  8) & 0xFF;
+        myArray16[1] =  SENSOR.IP5 & 0xFF;
+
+        for(int x = 0; x <= 1; x++){
+          DEBUG_PRINT.print(" ");
+          DEBUG_PRINT.print(myArray16[x]);
+        }
+        
+        Wire.write(myArray16, 2);
+        DEBUG_PRINT.println(" ");
 
       break;
 
@@ -444,39 +570,13 @@ void requestEvent() {
               Value from 0 up to 128
       ========================*/
       case REG_ALARM:
-        Serial.print  (F(" \t :: 1 byte  :: "));
-        Serial.print  (SENSOR.ALARM);
-        Serial.print  (F(" :: in Byte: "));
+        DEBUG_PRINT.print  (F(" \t :: 1 byte  :: "));
+        DEBUG_PRINT.print  (SENSOR.ALARM);
+        DEBUG_PRINT.print  (F(" :: in Byte: "));
 
-        Serial.println(SENSOR.ALARM);
+        DEBUG_PRINT.println(SENSOR.ALARM);
         Wire.write(SENSOR.ALARM);
         break;
-
-
-      /*========================
-      Device MEASURE_TIME_INTERWAL: 0x09 [ READ / WRITE ] 
-      unsigned 32 bit integer [uint32_t]
-      SEND: 4 byte of data
-      ========================*/
-      case REG_MEASURE_TIME_INTERWAL:
-        Serial.print  (F(" \t :: 4 bytes :: "));
-        Serial.print  (SENSOR.MEASURE_TIME_INTERWAL);
-        Serial.print  (F(" :: in Byte: "));
-
-
-        myArray[0] = (SENSOR.MEASURE_TIME_INTERWAL >> 24) & 0xFF;
-        myArray[1] = (SENSOR.MEASURE_TIME_INTERWAL >> 16) & 0xFF;
-        myArray[2] = (SENSOR.MEASURE_TIME_INTERWAL >>  8) & 0xFF;
-        myArray[3] =  SENSOR.MEASURE_TIME_INTERWAL & 0xFF;
-
-        for(int x = 0; x <= 3; x++){
-          Serial.print(" ");
-          Serial.print(myArray[x]);
-        }
-        
-        Wire.write(myArray, 4);
-        Serial.println(" ");
-      break;
 
 
     /*========================
@@ -485,9 +585,9 @@ void requestEvent() {
       SEND: 4 byte of data
       ========================*/
       case REG_DETECTION_TRESHOLD:
-        Serial.print  (F(" \t :: 4 bytes :: "));
-        Serial.print  (SENSOR.DETECTION_TRESHOLD);
-        Serial.print  (F(" :: in Byte: "));
+        DEBUG_PRINT.print  (F(" \t :: 4 bytes :: "));
+        DEBUG_PRINT.print  (SENSOR.DETECTION_TRESHOLD);
+        DEBUG_PRINT.print  (F(" :: in Byte: "));
 
         myArray[0] = (SENSOR.DETECTION_TRESHOLD >> 24) & 0xFF;
         myArray[1] = (SENSOR.DETECTION_TRESHOLD >> 16) & 0xFF;
@@ -495,12 +595,12 @@ void requestEvent() {
         myArray[3] =  SENSOR.DETECTION_TRESHOLD & 0xFF;
 
         for(int x = 0; x <= 3; x++){
-          Serial.print(" ");
-          Serial.print(myArray[x]);
+          DEBUG_PRINT.print(" ");
+          DEBUG_PRINT.print(myArray[x]);
         }
         
         Wire.write(myArray, 4);
-        Serial.println(" ");
+        DEBUG_PRINT.println(" ");
       break;
 
 
@@ -510,9 +610,9 @@ void requestEvent() {
       SEND: 4 byte of data
       ========================*/
       case REG_DETECTION_VALUE:
-        Serial.print  (F(" \t :: 4 bytes :: "));
-        Serial.print  (SENSOR.DETECTION_VALUE);
-        Serial.print  (F(" :: in Byte: "));
+        DEBUG_PRINT.print  (F(" \t :: 4 bytes :: "));
+        DEBUG_PRINT.print  (SENSOR.DETECTION_VALUE);
+        DEBUG_PRINT.print  (F(" :: in Byte: "));
 
         myArray[0] = (SENSOR.DETECTION_VALUE >> 24) & 0xFF;
         myArray[1] = (SENSOR.DETECTION_VALUE >> 16) & 0xFF;
@@ -520,49 +620,143 @@ void requestEvent() {
         myArray[3] =  SENSOR.DETECTION_VALUE & 0xFF;
 
         for(int x = 0; x <= 3; x++){
-          Serial.print(" ");
-          Serial.print(myArray[x]);
+          DEBUG_PRINT.print(" ");
+          DEBUG_PRINT.print(myArray[x]);
         }
         
         Wire.write(myArray, 4);
-        Serial.println(" ");
+        DEBUG_PRINT.println(" ");
       break;
 
+
+      /*========================
+      Device FW: 0x0D [ READ  ] 
+      unsigned 32 bit integer [uint32_t]
+      SEND: 4 byte of data
+      ========================*/
+      case REG_FW:
+        DEBUG_PRINT.print  (F(" \t :: 4 bytes :: "));
+        DEBUG_PRINT.print  (SENSOR.FW);
+        DEBUG_PRINT.print  (F(" :: in Byte: "));
+
+        myArray[0] = (SENSOR.FW >> 24) & 0xFF;
+        myArray[1] = (SENSOR.FW >> 16) & 0xFF;
+        myArray[2] = (SENSOR.FW >>  8) & 0xFF;
+        myArray[3] =  SENSOR.FW & 0xFF;
+
+        for(int x = 0; x <= 3; x++){
+          DEBUG_PRINT.print(" ");
+          DEBUG_PRINT.print(myArray[x]);
+        }
+        
+        Wire.write(myArray, 4);
+        DEBUG_PRINT.println(" ");
+      break;
+
+      /*========================
+      Device ID_CHIP: 0x0E [ READ / WRITE ] 
+      unsigned 32 bit integer [uint32_t]
+      SEND: 4 byte of data
+      ========================*/
+      case REG_ID_CHIP:
+        DEBUG_PRINT.print  (F(" \t :: 4 bytes :: "));
+        DEBUG_PRINT.print  (SENSOR.ID_CHIP);
+        DEBUG_PRINT.print  (F(" :: in Byte: "));
+
+        myArray[0] = (SENSOR.ID_CHIP >> 24) & 0xFF;
+        myArray[1] = (SENSOR.ID_CHIP >> 16) & 0xFF;
+        myArray[2] = (SENSOR.ID_CHIP >>  8) & 0xFF;
+        myArray[3] =  SENSOR.ID_CHIP & 0xFF;
+
+        for(int x = 0; x <= 3; x++){
+          DEBUG_PRINT.print(" ");
+          DEBUG_PRINT.print(myArray[x]);
+        }
+        
+        Wire.write(myArray, 4);
+        DEBUG_PRINT.println(" ");
+      break;
+
+
+      /*========================
+      Device REG_TIMESTAMP: 0x0E [ READ / WRITE ] 
+      unsigned 32 bit integer [uint32_t]
+      SEND: 4 byte of data
+      ========================*/
+      case REG_TIMESTAMP:
+        DEBUG_PRINT.print  (F(" \t :: 4 bytes :: "));
+        DEBUG_PRINT.print  (SENSOR.TIMESTAMP);
+        DEBUG_PRINT.print  (F(" :: in Byte: "));
+
+        myArray[0] = (SENSOR.TIMESTAMP >> 24) & 0xFF;
+        myArray[1] = (SENSOR.TIMESTAMP >> 16) & 0xFF;
+        myArray[2] = (SENSOR.TIMESTAMP >>  8) & 0xFF;
+        myArray[3] =  SENSOR.TIMESTAMP & 0xFF;
+
+        for(int x = 0; x <= 3; x++){
+          DEBUG_PRINT.print(" ");
+          DEBUG_PRINT.print(myArray[x]);
+        }
+        
+        Wire.write(myArray, 4);
+        DEBUG_PRINT.println(" ");
+      break;
+
+
       default :
-        Serial.println(F(":: >> EMPTY <<"));
+        DEBUG_PRINT.println(F(":: >> EMPTY <<"));
         Wire.write("ERR_02");
         break;
     }
   } // end if( reg >= 0)
   else{
-    Serial.print(":: ERR Wrong Register:");
-    Serial.println(reg);
+    DEBUG_PRINT.print(":: ERR Wrong Register:");
+    DEBUG_PRINT.println(reg);
     Wire.write("ERR_01");
   }
 
     reg = -1;     // if trransmistion go well then set regster for unreal value to prewent resend the same information 
-    Serial.println("");
+    DEBUG_PRINT.println("");
 }
 
-void INIT_I2C(){
-  Serial.println("INIT I2C:");
-  Serial.print("I2C address: ");  
-  Serial.print((I2C_ADDRESS));
+TwoWire rtcc = TwoWire(0);
 
-  Wire.begin(I2C_ADDRESS);      /* join i2c bus with address 8 */
+void INIT_I2C(){
+  DEBUG_PRINT.println("INIT I2C:");
+  DEBUG_PRINT.print("I2C address: ");  
+  DEBUG_PRINT.print((I2C_ADDRESS));
+
+  Wire.begin(I2C_ADDRESS);//I2C_ADDRESS, I2C_SDA, I2C_SCL);      /* join i2c bus with address 8 */
   Wire.onReceive(receiveEvent); /* register receive event */
   Wire.onRequest(requestEvent); /* register request event */
 }
 
 
+
+void IRAM_ATTR isr() {
+  ESP.restart();
+        // digitalWrite( A1, !digitalRead(A1));
+
+}
+
 void setup() {
   randomSeed(analogRead(0));
-  pinMode( PIN_ALARM , OUTPUT);
-  digitalWrite( PIN_ALARM, HIGH);
+  pinMode( A1 , OUTPUT);
+  digitalWrite( A1, LOW);
 
-  Serial.begin(9600);
-  Serial.println(" ");
-  Serial.println("======== SETUP ======== ");
+	pinMode(A0, INPUT_PULLUP);
+	attachInterrupt(A0, isr, FALLING);
+
+  for(int i=0;i<=10;i++){
+      digitalWrite( A1, !digitalRead(A1));
+      delay(100);
+  }
+
+
+
+  DEBUG_PRINT.begin(9600);
+  DEBUG_PRINT.println(" ");
+  DEBUG_PRINT.println("======== SETUP ======== ");
   INIT();
   INIT_I2C();
   
@@ -573,17 +767,23 @@ void setup() {
 void loop() {
   int dt =0;
   dt = (millis() - last);
-  Serial.print("ms: ");        Serial.print(dt);
-  Serial.print(" \t :: Alarm : ");  Serial.print(bitRead(SENSOR.ALARM,0)); 
-  Serial.print(" [");  Serial.print((uint8_t)(SENSOR.ALARM >> 1)); Serial.print("]");
+  DEBUG_PRINT.print("ms: ");        DEBUG_PRINT.print(dt);
+  DEBUG_PRINT.print(" \t :: Alarm : ");  DEBUG_PRINT.print(bitRead(SENSOR.ALARM,0)); 
+  DEBUG_PRINT.print(" [");  DEBUG_PRINT.print((uint8_t)(SENSOR.ALARM >> 1)); DEBUG_PRINT.print("]");
  
-  Serial.print(" \t :: Status: ");  Serial.print(bitRead(SENSOR.STATUS,0));
-  Serial.print(" [");  Serial.print((uint8_t)(SENSOR.STATUS >> 1)); Serial.print("]");
+  DEBUG_PRINT.print(" \t :: Status: ");  DEBUG_PRINT.print(bitRead(SENSOR.STATUS,0));
+  DEBUG_PRINT.print(" [");  DEBUG_PRINT.print((uint8_t)(SENSOR.STATUS >> 1)); DEBUG_PRINT.print("]");
 
-  Serial.print(" \t :: ERROR: ");  Serial.print(bitRead(SENSOR.ERROR,0));
-  Serial.print(" [");  Serial.print((uint8_t)(SENSOR.ERROR >> 1)); Serial.print("]");
+  DEBUG_PRINT.print(" \t :: ERROR: ");  DEBUG_PRINT.print(bitRead(SENSOR.ERROR,0));
+  DEBUG_PRINT.print(" [");  DEBUG_PRINT.print((uint8_t)(SENSOR.ERROR >> 1)); DEBUG_PRINT.print("]");
 
-  Serial.print(" \t :: RESET: ");  Serial.println(SENSOR.STATUS);
+  DEBUG_PRINT.print(" \t :: TIMESTAMP: ");  DEBUG_PRINT.print(SENSOR.TIMESTAMP);
+  DEBUG_PRINT.print(" \t :: DET VALUE: ");  DEBUG_PRINT.print(SENSOR.DETECTION_VALUE);
+  
+  // DEBUG_PRINT.print(" [");  DEBUG_PRINT.print((SENSOR.TIMESTAMP)); DEBUG_PRINT.print("]");
+
+
+  DEBUG_PRINT.print(" \t :: RESET: ");  DEBUG_PRINT.println(SENSOR.STATUS);
 
 
 
@@ -592,7 +792,13 @@ void loop() {
     INIT_RANDOM(); 
     DATAPROCESS();
   }
-  SENSOR.LIFETIME = millis()/1000;
-  delay(1000);
+  SENSOR.TIMESTAMP = millis();
+  SENSOR.DETECTION_VALUE++;
+  
+  DATAPROCESS();
+  delay(500);
+  
+  // digitalWrite( A1, !digitalRead(A1));
+
 
 }
