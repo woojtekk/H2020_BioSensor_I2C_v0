@@ -726,7 +726,7 @@ void INIT_I2C(){
   DEBUG_PRINT.print("I2C address: ");  
   DEBUG_PRINT.print((I2C_ADDRESS));
 
-  Wire.begin(I2C_ADDRESS);//I2C_ADDRESS, I2C_SDA, I2C_SCL);      /* join i2c bus with address 8 */
+  Wire.begin(I2C_ADDRESS, 7, 6,100000); //I2C_ADDRESS, I2C_SDA, I2C_SCL, speed);      /* join i2c bus with address 8 */
   Wire.onReceive(receiveEvent); /* register receive event */
   Wire.onRequest(requestEvent); /* register request event */
 }
@@ -780,7 +780,7 @@ void loop() {
   DEBUG_PRINT.print(" \t :: TIMESTAMP: ");  DEBUG_PRINT.print(SENSOR.TIMESTAMP);
   DEBUG_PRINT.print(" \t :: DET VALUE: ");  DEBUG_PRINT.print(SENSOR.DETECTION_VALUE);
   
-  // DEBUG_PRINT.print(" [");  DEBUG_PRINT.print((SENSOR.TIMESTAMP)); DEBUG_PRINT.print("]");
+  // e
 
 
   DEBUG_PRINT.print(" \t :: RESET: ");  DEBUG_PRINT.println(SENSOR.STATUS);
