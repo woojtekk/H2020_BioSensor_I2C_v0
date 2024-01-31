@@ -15,11 +15,31 @@
 #define REG_ID_CHIP                 0x0E  // uint32 ==> 4 byte R
 #define REG_TIMESTAMP               0x0F  // uint32 ==> 4 byte R/W
 
+#define PIN_FAN         20
+#define PIN_FAN_1       4
+#define PIN_FAN_2       5
+#define PIN_PUMP_1      9
+#define PIN_PUMP_2      21
+#define PIN_DTS         1
+#define PIN_TEMP        10
+#define PIN_LED_GREEN   5 // 20
+#define PIN_LED2_GREEN  4 // 21
+#define PIN_LED2_RED    6 // 21
 
+#define PIN_I2C_SDA    8 // 8 // 18
+#define PIN_I2C_SCL    10 // 10 // 19
 
 
 #define I2C_ADDRESS       0x66
-#define I2C_SCL           13              // A5  - those pins can not be changed for arduino uno
-#define I2C_SDA           12              // A4  - those pins can not be changed for arduino uno
+// #define I2C_SCL           13              // A5  - those pins can not be changed for arduino uno
+// #define I2C_SDA           12              // A4  - those pins can not be changed for arduino uno
 #define PIN_ALARM         23
-#define BIOSENSOR_ID      UINT32_MAX      // 24 bits unsigned integer. range: 0 - 16`777`215 
+
+#define SENSOR_1_ID      0x1603FF09      // 24 bits unsigned integer. range: 0 - 16`777`215 
+#define SENSOR_2_ID      0x1603FF09      // 24 bits unsigned integer. range: 0 - 16`777`215 
+#define SENSOR_3_ID      0x1603FF09      // 24 bits unsigned integer. range: 0 - 16`777`215 
+
+#define DEVICE_1_ID      231201      // 24 bits unsigned integer. range: 0 - 16`777`215 
+#define DEVICE_2_ID      231202      // 24 bits unsigned integer. range: 0 - 16`777`215 
+#define DEVICE_3_ID      231203      // 24 bits unsigned integer. range: 0 - 16`777`215 
+
