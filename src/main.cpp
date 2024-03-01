@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 
-#define DEBUG  true
+#define DEBUG  false
 #define DEBUG_PRINT if(DEBUG) Serial
 #define N 10
 
@@ -106,15 +106,16 @@ void  DATAPROCESS(){
 
   if(SENSOR.RESET != 0)  DATAPROCESS_RESET();
 
-  if(SENSOR.DETECTION_VALUE > SENSOR.DETECTION_TRESHOLD){
+  if(SENSOR.DETECTION_VALUE > SENSOR.DETECTION_TRESHOLD & (SENSOR.ALARM == 0)){
     uint8_t tmp = SENSOR.ALARM >> 1;
     tmp++;
     tmp<<1;
     bitWrite(SENSOR.ALARM,0,1);
 
-  } else {
-    bitWrite(SENSOR.ALARM,0,0);
-  }
+  } 
+  // else {
+  //   bitWrite(SENSOR.ALARM,0,0);
+  // }
 
 
 }
@@ -544,7 +545,7 @@ void INIT_I2C(){
 
   // Wire.begin(I2C_ADDRESS, PIN_I2C_SDA, PIN_I2C_SCL,100000) ;
   
-  Wire.begin(I2C_ADDRESS, 7, 8,100000) ;
+  Wire.begin(I2C_ADDRESS, PIN_I2C_SDA, PIN_I2C_SCL, 100000) ;
 
   Wire.onReceive(receiveEvent);
   Wire.onRequest(requestEvent);
@@ -582,21 +583,23 @@ void INIT_LED(){
 
 void INIT_PUMPS(){
   pinMode(PIN_PUMP_1  , OUTPUT);
-  digitalWrite(PIN_PUMP_1, LOW);
+  digitalWrite(PIN_PUMP_1, !LOW);
   
   pinMode(PIN_PUMP_2  , OUTPUT);
-  digitalWrite(PIN_PUMP_2, LOW);
+  digitalWrite(PIN_PUMP_2, !LOW);
 }
 
 void INIT_FAN(){
-  pinMode(PIN_FAN_1,OUTPUT);
-  pinMode(PIN_FAN_2,OUTPUT);
+  pinMode(PIN_FAN,OUTPUT);
+  digitalWrite(PIN_FAN, !LOW);
+  
+  // pinMode(PIN_FAN_2,OUTPUT);
   // pinMode(PIN_FAN_EN,OUTPUT);
 }
 
 
 void setup() {
-delay(5000);
+delay(500);
   DEBUG_PRINT.begin(9600);
   DEBUG_PRINT.println(" ");
   DEBUG_PRINT.println("======== SETUP START ========");
@@ -605,8 +608,8 @@ delay(5000);
   
   INIT_DEV_PARAM();
   INIT_LED();
-  // INIT_PUMPS();
-  // INIT_FAN();
+  INIT_PUMPS();
+  INIT_FAN();
   INIT_I2C();
 
   DEBUG_PRINT.println("======== SETUP END ========");
@@ -623,15 +626,17 @@ delay(5000);
 }
 
 
-void PUMP_1(bool run){
 
-  digitalWrite(PIN_FAN, !run);
-}
 
 
 void FAN(bool run){
-    digitalWrite(PIN_PUMP_1,!run);
+    digitalWrite(PIN_FAN,!run);
 
+}
+
+void PUMP_1(bool run){
+
+  digitalWrite(PIN_PUMP_1, !run);
 }
 
 bool PUMP_1(){
@@ -701,6 +706,10 @@ void BioSensor_Update(){
       Serial.print(" \t A:   "); Serial.print(SENSOR.ALARM);
       Serial.print(" \t Tsh: "); Serial.print(SENSOR.DETECTION_TRESHOLD);
 
+      
+      // digitalWrite(PIN_PUMP_1, HIGH);
+      // digitalWrite(PIN_PUMP_1, HIGH);
+      // digitalWrite(PIN_FAN, LOW);
       PUMP_1(true);
       PUMP_2(true);
       FAN(0);
@@ -717,6 +726,9 @@ void BioSensor_Update(){
       PUMP_2(false);
       FAN(0);
       TDS();
+      SENSOR.DETECTION_VALUE_BKG =  SENSOR.DETECTION_VALUE;
+      SENSOR.DETECTION_TRESHOLD = SENSOR.DETECTION_VALUE_BKG*1.16;
+
     }
 
     if(SENSOR.RUUNINGTIME > 21 && SENSOR.RUUNINGTIME <40){
@@ -752,6 +764,10 @@ void BioSensor_Update(){
       SENSOR.RUUNINGTIME=0;
       SENSOR.MODE = 0;
       // Sensor_start_time=0;
+      SENSOR.DETECTION_TRESHOLD=0;
+      SENSOR.DETECTION_VALUE_BKG=0;
+      SENSOR.DETECTION_VALUE=0;
+      SENSOR.ALARM=0;
       Serial.println("\n--------------- END ----------------\n");
       // if(SENSOR.WILLALARM) SENSOR.ALARM=2;
     }
@@ -778,7 +794,7 @@ void LED_UPDATE(){
         digitalWrite(PIN_LED2_RED  , LOW);
         break;
       case 1:
-        if(SENSOR.TIMESTAMP%2)digitalWrite(PIN_LED_GREEN, !digitalRead(PIN_LED_GREEN));
+        if(SENSOR.TIMESTAMP%2)digitalWrite(PIN_LED2_GREEN, !digitalRead(PIN_LED2_GREEN));
         digitalWrite(PIN_LED2_RED  , LOW);
         break;
       case 2:
@@ -849,6 +865,8 @@ void SERIAL_COMMAND_GET(){
     if(val[0] == "start"){
       DEBUG_PRINT.print(":: SENSOR START >>>>>");
       SENSOR.MODE_UPDATE= true;
+      SENSOR.MODE=1;
+      Sensor_start_time=0;
       return;
       }
 
@@ -943,15 +961,29 @@ void SleepDelay(uint32_t mseconds) {
 
 
 void loop() {
-  if (millis() % 50 == 0)  {
-    SENSOR.TIMESTAMP=millis()/100;
-    digitalWrite(PIN_LED2_GREEN,!digitalRead(PIN_LED2_GREEN));
-    }
 
-    FAN(0);
-    delay(10000);
-    FAN(1);
-    delay(10000);
+  SENSOR.TIMESTAMP=millis()/1000;
+
+
+  // if (millis() % 50 == 0)  {
+  //   SENSOR.TIMESTAMP=millis()/100;
+  //   Serial.println(SENSOR.TIMESTAMP);
+  //   digitalWrite(PIN_LED2_GREEN,!digitalRead(PIN_LED2_GREEN));
+  //   }
+
+  SERIAL_COMMAND_GET();
+
+  BioSensor_Update();
+
+  DATAPROCESS();
+  LED_UPDATE();
+  delay(100);
+
+  if(SENSOR.MODE == 0 ){
+      SENSOR.MODE_UPDATE= true;
+      SENSOR.MODE=1;
+      Sensor_start_time=0;
+}
 
 
     // if (Sensor_start_time == 0) Sensor_start_time=millis()/1000;
@@ -1058,7 +1090,6 @@ void loop() {
   // Serial.println(SENSOR.TIMESTAMP);
   // Serial.println((uint32_t)(millis()/1000));
   
-  SERIAL_COMMAND_GET();
 
 
   // if(SENSOR.MODE_UPDATE){
@@ -1187,7 +1218,6 @@ void loop() {
 
 
 
-  delay(250);
   
   
 
