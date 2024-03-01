@@ -15,16 +15,19 @@
 #define REG_ID_CHIP                 0x0E  // uint32 ==> 4 byte R
 #define REG_TIMESTAMP               0x0F  // uint32 ==> 4 byte R/W
 
-#define PIN_FAN         20
-#define PIN_FAN_1       4
-#define PIN_FAN_2       5
-#define PIN_PUMP_1      9
-#define PIN_PUMP_2      21
+#define PIN_FAN_1       9 //
+#define PIN_FAN_2       9 // 5
+
+#define PIN_FAN         9 // 20   wentylator
+#define PIN_PUMP_1      21 // 9   pompa lewa
+#define PIN_PUMP_2      20 // 21  pompa prawa
+
 #define PIN_DTS         1
 #define PIN_TEMP        10
-#define PIN_LED_GREEN   5 // 20
-#define PIN_LED2_GREEN  4 // 21
-#define PIN_LED2_RED    6 // 21
+
+#define PIN_LED_GREEN   6 // 5 // 20
+#define PIN_LED2_GREEN  4 // 4 // 21
+#define PIN_LED2_RED    5 // 6 // 21
 
 #define PIN_I2C_SDA    8 // 8 // 18
 #define PIN_I2C_SCL    10 // 10 // 19
